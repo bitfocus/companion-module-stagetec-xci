@@ -3,11 +3,12 @@ import UpgradeScripts from './upgrades.js'
 import UpdateActions from './actions.js'
 import UpdateFeedbacks from './feedbacks.js'
 import UpdateVariableDefinitions from './variables.js'
+import { SharedUDPSocketWrapper } from './wrapper.js'
 import snmp from 'net-snmp'
 const xciLogicOid = '1.3.6.1.4.1.40085.1.1.1.3.2.3.1.2.'
 const xciLogicTrue = 2
 
-let options = {
+const SnmpAgentOptions = {
 	port: 162,
 	disableAuthorization: true,
 	includeAuthentication: true,
@@ -17,9 +18,12 @@ let options = {
 	transport: 'udp4',
 }
 
-let trapCallback = function (error, notification) {
+const trapCallback = function (error, notification) {
 	if (error) {
-		this.log('error', JSON.stringify(error))
+		this.log('error', `Trap error name: ${error.name}`)
+		this.log('error', `Trap error message: ${error.message}`)
+		this.log('error', `Trap error keys: ${Object.getOwnPropertyNames(error).join(', ')}`)
+		this.log('error', `Trap error full: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`)
 		this.updateStatus(InstanceStatus.UnknownError, JSON.stringify(error))
 	} else {
 		const trap = notification
@@ -84,12 +88,16 @@ class StagetecXCI extends InstanceBase {
 
 	async init(config) {
 		this.config = config
-		this.snmpReciever = snmp.createReceiver(options, trapCallback.bind(this))
 		if (this.config.host === undefined || this.config.host === '') {
 			this.updateStatus(InstanceStatus.BadConfig)
 			this.log('error', 'Invalid config - missing IP')
 		} else {
-			this.updateStatus(InstanceStatus.Ok, 'Listening')
+			try {
+				await this.initAgent()
+			} catch (err) {
+				this.log('error', `Agent initialisation failed: ${err.message ?? ''}`)
+				this.updateStatus(InstanceStatus.UnknownError)
+			}
 		}
 		this.updateActions() // export actions
 		this.updateFeedbacks() // export feedbacks
@@ -99,8 +107,62 @@ class StagetecXCI extends InstanceBase {
 	// When module gets deleted
 	async destroy() {
 		this.log('debug', 'destroy')
-		this.snmpReciever.close()
-		delete this.snmpReciever
+		this.closeListener()
+	}
+
+	closeListener() {
+		if (this.snmpReciever) {
+			this.snmpReciever.close()
+		}
+
+		if (this.socketWrapper) {
+			this.socketWrapper.close()
+			this.socketWrapper.removeAllListeners()
+		}
+
+		if (this.listeningSocket) {
+			this.listeningSocket.close()
+			this.listeningSocket.removeAllListeners()
+		}
+	}
+
+	async initAgent() {
+		this.closeListener()
+
+		return new Promise((resolve, reject) => {
+			this.listeningSocket = this.createSharedUdpSocket('udp4')
+
+			const errorHandler = (err) => {
+				this.log('error', `Listener error: ${err.message}`)
+				this.listeningSocket.removeAllListeners()
+				reject(err)
+			}
+			this.listeningSocket.addListener('error', errorHandler)
+
+			this.listeningSocket.addListener('listening', () => {
+				this.log('info', `Listening`)
+			})
+
+			this.listeningSocket.bind(162, this.config.host, () => {
+				try {
+					this.listeningSocket.removeListener('error', errorHandler)
+					this.socketWrapper = new SharedUDPSocketWrapper(this.listeningSocket, 162, this.config.host)
+					const receiverOptions = {
+						...SnmpAgentOptions,
+						dgramModule: this.socketWrapper,
+					}
+					this.snmpReciever = snmp.createReceiver(receiverOptions, trapCallback.bind(this))
+					this.snmpReciever.authorizer.addCommunity(this.config.community)
+					this.log('info', `Bound to Port 162 and waiting for Traps from ${this.config.host}`)
+					this.updateStatus(InstanceStatus.Ok)
+					resolve()
+				} catch (err) {
+					this.listeningSocket.removeAllListeners()
+					console.error(err)
+					reject(err)
+				}
+			})
+		})
 	}
 
 	async resetVariables() {
@@ -128,7 +190,12 @@ class StagetecXCI extends InstanceBase {
 			this.updateStatus(InstanceStatus.BadConfig)
 			this.log('error', 'Invalid config - missing IP')
 		} else {
-			this.updateStatus(InstanceStatus.Ok, 'Listening')
+			try {
+				await this.initAgent()
+			} catch (err) {
+				this.log('error', `Agent initialisation failed: ${err.message ?? ''}`)
+				this.updateStatus(InstanceStatus.UnknownError)
+			}
 		}
 		this.updateActions() // export actions
 		this.updateFeedbacks() // export feedbacks

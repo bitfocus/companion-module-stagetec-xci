@@ -1,4 +1,5 @@
 import { combineRgb } from '@companion-module/base'
+import { checkCellValue } from './actions.js'
 
 export default async function (self) {
 	self.setFeedbackDefinitions({
@@ -21,9 +22,7 @@ export default async function (self) {
 					range: true,
 					step: 1,
 					tooltip: 'Refer to Nexus Service for Logic Cell number',
-					isVisible: (options) => {
-						return !options.useVar
-					},
+					isVisibleExpression: '!$(options:useVar)',
 				},
 				{
 					id: 'cellVar',
@@ -32,9 +31,7 @@ export default async function (self) {
 					default: '',
 					useVariables: { local: true },
 					tooltip: 'Variable must return an integer between 1 and 256',
-					isVisible: (options) => {
-						return options.useVar
-					},
+					isVisibleExpression: '$(options:useVar)',
 				},
 				{
 					id: 'useVar',
@@ -43,14 +40,9 @@ export default async function (self) {
 					default: false,
 				},
 			],
-			callback: async (feedback, context) => {
-				const cell = feedback.options.useVar
-					? parseInt(await context.parseVariablesInString(feedback.options.cellVar))
-					: parseInt(feedback.options.cell)
-				if (isNaN(cell) || cell < 1 || cell > 256) {
-					self.log('warn', `Invalid Cell! ${cell} from ${feedback.options.cellVar}`)
-					return undefined
-				}
+			callback: async (feedback) => {
+				const cell = feedback.options.useVar ? parseInt(feedback.options.cellVar) : Math.floor(feedback.options.cell)
+				checkCellValue(cell)
 				return self.logicCell[cell].value
 			},
 		},
@@ -73,9 +65,7 @@ export default async function (self) {
 					range: true,
 					step: 1,
 					tooltip: 'Refer to Nexus Service for Logic Cell number',
-					isVisible: (options) => {
-						return !options.useVar
-					},
+					isVisibleExpression: '!$(options:useVar)',
 				},
 				{
 					id: 'cellVar',
@@ -84,9 +74,7 @@ export default async function (self) {
 					default: '',
 					useVariables: { local: true },
 					tooltip: 'Variable must return an integer between 1 and 256',
-					isVisible: (options) => {
-						return options.useVar
-					},
+					isVisibleExpression: '$(options:useVar)',
 				},
 				{
 					id: 'useVar',
@@ -95,14 +83,9 @@ export default async function (self) {
 					default: false,
 				},
 			],
-			callback: async (feedback, context) => {
-				const cell = feedback.options.useVar
-					? parseInt(await context.parseVariablesInString(feedback.options.cellVar))
-					: parseInt(feedback.options.cell)
-				if (isNaN(cell) || cell < 1 || cell > 256) {
-					self.log('warn', `Invalid Cell! ${cell} from ${feedback.options.cellVar}`)
-					return undefined
-				}
+			callback: async (feedback) => {
+				const cell = feedback.options.useVar ? parseInt(feedback.options.cellVar) : Math.floor(feedback.options.cell)
+				checkCellValue(cell)
 				return self.logicCell[cell].latch
 			},
 		},

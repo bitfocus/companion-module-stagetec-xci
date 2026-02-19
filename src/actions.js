@@ -1,3 +1,9 @@
+export const checkCellValue = (cell) => {
+	if (isNaN(cell) || cell < 1 || cell > 256) {
+		throw new Error(`Invalid Cell! ${cell} should be a number between 1 and 256`)
+	}
+}
+
 export default function (self) {
 	self.setActionDefinitions({
 		resetLatch: {
@@ -13,9 +19,7 @@ export default function (self) {
 					range: true,
 					step: 1,
 					tooltip: 'Refer to Nexus Service for Logic Cell number',
-					isVisible: (options) => {
-						return !(options.useVar || options.all)
-					},
+					isVisibleExpression: '!($(options:useVar) || $(options:all))',
 				},
 				{
 					id: 'cellVar',
@@ -23,30 +27,24 @@ export default function (self) {
 					label: 'Logic Cell',
 					useVariables: { local: true },
 					tooltip: 'Variable must return an integer between 1 and 256',
-					isVisible: (options) => {
-						return options.useVar && !options.all
-					},
+					isVisibleExpression: '$(options:useVar) && !$(options:all)',
 				},
 				{
 					id: 'useVar',
 					type: 'checkbox',
 					label: 'Use Variable',
 					default: false,
-					isVisible: (options) => {
-						return !options.all
-					},
+					isVisibleExpression: '!$(options:all)',
 				},
 				{
 					id: 'all',
 					type: 'checkbox',
 					label: 'Reset All',
 					default: false,
-					isVisible: (options) => {
-						return !options.useVar
-					},
+					isVisibleExpression: '!$(options:useVar)',
 				},
 			],
-			callback: async (action, context) => {
+			callback: async (action) => {
 				let varList = []
 				if (action.options.all) {
 					for (let i = 1; i <= 256; i++) {
@@ -56,15 +54,10 @@ export default function (self) {
 					self.log('debug', 'Resetting all latches')
 					self.setVariableValues(varList)
 					self.checkFeedbacks('xciSnmpTrapLatch')
-					return true
+					return
 				}
-				const cell = action.options.useVar
-					? parseInt(await context.parseVariablesInString(action.options.cellVar))
-					: parseInt(action.options.cell)
-				if (isNaN(cell) || cell < 1 || cell > 256) {
-					self.log('warn', `Invalid Cell! ${cell} from ${action.options.cellVar}`)
-					return undefined
-				}
+				const cell = action.options.useVar ? parseInt(action.options.cellVar) : Math.floor(action.options.cell)
+				checkCellValue(cell)
 				self.logicCell[cell].latch = false
 				self.log('debug', `Resetting latch ${cell}`)
 				varList[`cellLatch_${cell}`] = self.logicCell[cell].latch
@@ -85,9 +78,7 @@ export default function (self) {
 					range: true,
 					step: 1,
 					tooltip: 'Refer to Nexus Service for Logic Cell number',
-					isVisible: (options) => {
-						return !(options.useVar || options.all)
-					},
+					isVisibleExpression: '!($(options:useVar) || $(options:all))',
 				},
 				{
 					id: 'cellVar',
@@ -95,30 +86,24 @@ export default function (self) {
 					label: 'Logic Cell',
 					useVariables: { local: true },
 					tooltip: 'Variable must return an integer between 1 and 256',
-					isVisible: (options) => {
-						return options.useVar && !options.all
-					},
+					isVisibleExpression: '$(options:useVar) && !$(options:all)',
 				},
 				{
 					id: 'useVar',
 					type: 'checkbox',
 					label: 'Use Variable',
 					default: false,
-					isVisible: (options) => {
-						return !options.all
-					},
+					isVisibleExpression: '!$(options:all)',
 				},
 				{
 					id: 'all',
 					type: 'checkbox',
 					label: 'Reset All',
 					default: false,
-					isVisible: (options) => {
-						return !options.useVar
-					},
+					isVisibleExpression: '!$(options:useVar)',
 				},
 			],
-			callback: async (action, context) => {
+			callback: async (action) => {
 				let varList = []
 				if (action.options.all) {
 					for (let i = 1; i <= 256; i++) {
@@ -127,15 +112,10 @@ export default function (self) {
 					}
 					self.log('debug', 'Resetting all counts')
 					self.setVariableValues(varList)
-					return true
+					return
 				}
-				const cell = action.options.useVar
-					? parseInt(await context.parseVariablesInString(action.options.cellVar))
-					: parseInt(action.options.cell)
-				if (isNaN(cell) || cell < 1 || cell > 256) {
-					self.log('warn', `Invalid Cell! ${cell} from ${action.options.cellVar}`)
-					return undefined
-				}
+				const cell = action.options.useVar ? parseInt(action.options.cellVar) : Math.floor(action.options.cell)
+				checkCellValue(cell)
 				self.logicCell[cell].count = 0
 				self.log('debug', `Resetting count ${cell}`)
 				varList[`cellLatch_${cell}`] = self.logicCell[cell].latch
