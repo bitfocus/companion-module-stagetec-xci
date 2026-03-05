@@ -5,6 +5,7 @@ import UpdateFeedbacks from './feedbacks.js'
 import UpdateVariableDefinitions from './variables.js'
 import { SharedUDPSocketWrapper } from './wrapper.js'
 import snmp from 'net-snmp'
+import * as os from 'os'
 const xciLogicOid = '1.3.6.1.4.1.40085.1.1.1.3.2.3.1.2.'
 const xciLogicTrue = 2
 
@@ -205,6 +206,7 @@ class StagetecXCI extends InstanceBase {
 
 	// Return config fields for web config
 	getConfigFields() {
+		const isLinuxUser = os.platform() === 'linux' && os.userInfo().username !== 'root'
 		return [
 			{
 				type: 'textinput',
@@ -222,6 +224,14 @@ class StagetecXCI extends InstanceBase {
 				regex: Regex.SOMETHING,
 				default: 'public',
 				tooltip: 'The configured community string',
+			},
+			{
+				type: 'static-text',
+				id: 'linuxPrivilegedPortWarning',
+				label: 'Privileged Port Warning',
+				value: `This module will attempt to bind to a privileged port 162, which requires elevated permissions on Linux. Since you are not running as <code>root</code>, you may need to grant the Node.js binary the <code>CAP_NET_BIND_SERVICE</code> capability. You can do this with one of the following tools: <strong>setcap</strong>, <strong>authbind</strong>.`,
+				width: 12,
+				isVisibleExpression: `${isLinuxUser}`,
 			},
 		]
 	}
