@@ -1,7 +1,9 @@
 {
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
 	"id": "stagetec-xci",
 	"name": "stagetec-xci",
-	"shortname": "Stagetec XCI",
+	"shortname": "XCI",
 	"description": "Stagetec Nexus XCI SNMP trap reciever",
 	"version": "0.0.0",
 	"license": "MIT",
@@ -14,10 +16,10 @@
 		}
 	],
 	"runtime": {
-		"type": "node22",
+		"type": "node26",
 		"api": "nodejs-ipc",
 		"apiVersion": "0.0.0",
-		"entrypoint": "../src/main.js"
+		"entrypoint": "../dist/main.js"
 	},
 	"legacyIds": [],
 	"manufacturer": "Stagetec",

@@ -14,7 +14,19 @@ The IP of the XCI card. Any traps recieved from other IPs will be ignored.
 
 **Community String**
 
-The community string set on the XCI. Any traps recieved with a non-matching community will be ignored.
+The community string set on the XCI. Any traps recieved with a non-matching community will be ignored. It is also used to read the state of the logic cells.
+
+**SNMP Version**
+
+The SNMP version set on the XCI, v1 or v2c. Traps are received in either, but the XCI is read in this version.
+
+**SNMP Agent Port**
+
+The port the XCI answers SNMP requests on, normally 161.
+
+**Status Poll Interval (s)**
+
+How often the Nexus status (project, base devices, trap destinations and errors) is read, 10 seconds by default. 0 reads it only when the module starts, when its config changes, and with the Refresh action.
 
 ### XCI Configuration
 
@@ -36,7 +48,11 @@ Both the network settings and logic configuration must be uploaded to the nexus 
 
 ### Note on use
 
-Since this module just listens for SNMP traps, it does not pickup the state of logic cells at module initialisation. All feedbacks are initialised to false.
+When the module starts, and whenever its config is changed, it reads the state of all 256 logic cells from the XCI. A cell found true also sets its latch, but is not counted, and does not change the Most Recent Trigger variable: those follow traps only. After that, the cells follow their traps.
+
+The rest of the Nexus status is read at the same time, then every poll interval. Errors are also kept up to date between polls by the XCI's error traps.
+
+If the XCI does not answer, the connection shows a warning, and the cells stay false until their next trap. Everything the module reads is read-only: SNMP can't change anything on the Nexus.
 
 ### Actions
 
@@ -47,6 +63,10 @@ Reset the specified count variable to zero.
 - **Reset Latch**
 
 Reset the specified latch variable to false.
+
+- **Refresh**
+
+Read the logic cells and the Nexus status from the XCI now.
 
 ### Variables
 
@@ -62,6 +82,15 @@ Goes true when a SNMP trap is recieved setting the cell to true. Stays true unti
 
 Returns the cell number of the most recently recieved true SNMP trap.
 
+The rest are named after the objects in the XCI's MIB (MATRIX5-MIB). Each is empty until read, or if the XCI doesn't report it.
+
+- **Project:** `projectName`, `projectRevision` (firmware revision), `baseDevNum` (base devices configured), `baseDevOnline` (base devices online), `syncSources`, `syncIndex` (the current sync source, 0 for internal)
+- **XCI:** `hostName`, `deviceType`, `moduleName` and `moduleVersion` (the MIB the XCI implements)
+- **Logic signals:** `firstSignal`, `configSignals` (how many are configured), `trapSignals` (how many have traps)
+- **Traps:** `trapDestinations`, `trapDestAuto`, `trapTimeout`, and `trapAddresses`, the destination IPs separated by commas
+- **Errors:** `activeErrors` (how many), `activeErrorNames` (separated by commas), and `lastErrorNode`, `lastErrorCode`, `lastErrorName` and `lastErrorParam` for the error that most recently occured, even once removed
+- **Each base device**, by its node number N: `deviceOnline_N`, `configBoards_N`, `availBoards_N`, `powerUnits_N`, `pwrGoodUnits_N`, `cpuTemperature_N` and `cpuMaxTemp_N` (the highest since cold boot), in °C. These appear once the XCI has been read
+
 ### Feedbacks
 
 - **XCI SNMP Trap**
@@ -72,47 +101,28 @@ Follows the state of the specified SNMP trap
 
 Goes true when triggered by a Trap. Stays true until reset.
 
-## Version History
+- **Sync Source**
 
-### Version 1.3.0
+True while the Nexus is synced to the source given, 0 for the internal clock.
 
-- Pass Shared UDP Socket to SNMP agent so multiple instances can be run at once
-- Let Companion parse variables
-- Abort actions and feedbacks by throwing errors
-- Replace isVisible properties with isVisibleExpression
-- Update dependencies
+The health feedbacks are value feedbacks, for use in expressions, local variables and layered buttons. Unlike the variables, they take the device, node or code as an option, so it can come from an expression.
 
-### Version 1.2.2
+- **Base Device Health**
 
-- Parse local variables
+One value from a base device: online, configured or available boards, whether every configured board is available, power units or working power units, whether every power unit works, or the CPU temperature now or its highest since cold boot. Empty for a device the XCI hasn't reported.
 
-### Version 1.2.1
+- **System Health**
 
-- Use Node 22
-- Update dependencies
+Whether every base device is online, every configured board available, or every power unit working; the hottest CPU temperature; or the number of active errors.
 
-### Version 1.2.0
+- **Active Errors**
 
-- Add count variable and reset action
-- Update dependencies
+The number of active errors, optionally only from one node or with one error code (0 for any).
 
-### Version 1.1.3
+### Presets
 
-- Update dependencies
+- **Health: Base Device Health**
 
-### Version 1.1.1
+One button per base device: its node number, whether it is online, its available and configured boards, its working and fitted power units, and its CPU temperature, with a gauge that turns amber at 60°C and red at 75°C. The background is green when all is well, amber when a board is missing or a power unit has failed, red when the device is offline, and grey until the XCI has been read.
 
-- Add latching feedbacks to complement variables
-- Update status on absent XCI IP
-
-### Version 1.1.0
-
-- Accept variables for feedback cell input
-- Add 'most recent' variable, displays the cell number of most recently received positive going trap
-- Add cell latch variable, and reset action. Goes true when triggered by an SNMP trap, and stays that way until reset
-- Update companion-module-base to 1.8.0
-- Update net-snmp to 3.11.2
-
-### Version 1.0.2
-
-- Initial release
+Once the XCI has been read, the preset is listed for each base device it reports. Until then it is offered for device 1. The button's `device` local variable picks the device, so it can be changed after placing.
