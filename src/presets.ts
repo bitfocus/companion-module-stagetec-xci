@@ -96,7 +96,7 @@ const countExpression = (label: string, have: string, of: string): string =>
 export const BOARDS_EXPRESSION = countExpression('Boards', local('availBoards'), local('configBoards'))
 export const POWER_EXPRESSION = countExpression('PSU', local('pwrGoodUnits'), local('powerUnits'))
 export const TEMPERATURE_EXPRESSION = templateString('CPU ', orDash(local('cpuTemperature')), '°C')
-export const TITLE_EXPRESSION = templateString('Device ', interpolate(`$(local:${DEVICE_VARIABLE})`))
+export const TITLE_EXPRESSION = templateString('BD ', interpolate(`$(local:${DEVICE_VARIABLE})`))
 /** The gauge sits empty until the temperature has been read */
 export const GAUGE_EXPRESSION = `${local('cpuTemperature')} ?? ${TEMPERATURE.min}`
 

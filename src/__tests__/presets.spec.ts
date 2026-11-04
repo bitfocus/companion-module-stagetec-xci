@@ -185,7 +185,7 @@ describe('base device health preset', () => {
 	describe('text', () => {
 		it('shows the device, its state, its boards, power units and temperature', () => {
 			const locals = localsFor({ ...HEALTHY, availBoards: 7 }, 3)
-			expect(evaluate(TITLE_EXPRESSION, locals)).toBe('Device 3')
+			expect(evaluate(TITLE_EXPRESSION, locals)).toBe('BD 3')
 			expect(evaluate(STATUS_EXPRESSION, locals)).toBe('Online')
 			expect(evaluate(BOARDS_EXPRESSION, locals)).toBe('Boards 7/8')
 			expect(evaluate(POWER_EXPRESSION, locals)).toBe('PSU 2/2')
