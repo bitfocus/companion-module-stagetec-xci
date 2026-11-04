@@ -1,9 +1,10 @@
-import type {
-	CompanionLayeredButtonPresetDefinition,
-	CompanionPresetDefinitions,
-	CompanionPresetGroup,
-	CompanionPresetLocalVariable,
-	CompanionPresetSection,
+import {
+	ButtonGraphicsDecorationType,
+	type CompanionLayeredButtonPresetDefinition,
+	type CompanionPresetDefinitions,
+	type CompanionPresetGroup,
+	type CompanionPresetLocalVariable,
+	type CompanionPresetSection,
 } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import type { ModuleTypes } from './main.js'
@@ -32,15 +33,22 @@ export const HEALTH_VARIABLES = [
 const local = (name: (typeof HEALTH_VARIABLES)[number]): string => `$(local:${name})`
 
 export const COLORS = {
-	ok: '#1b5e20',
-	degraded: '#b26a00',
-	offline: '#b71c1c',
-	unknown: '#424242',
+	ok: '#43a047',
+	degraded: '#fb8c00',
+	offline: '#e53935',
+	unknown: '#757575',
 	text: '#ffffff',
+	background: '#000000',
 } as const
 
-/** The CPU temperature gauge's range, in °C */
-export const TEMPERATURE = { min: 20, max: 100 } as const
+/**
+ * How bright the unlit part of the gauge is, as a percentage of its band colours. Companion's default of 70 left the
+ * track too close to the fill to tell them apart
+ */
+export const GAUGE_TRACK_AMOUNT = 25
+
+/** The bottom of the CPU temperature gauge, in °C. Its top follows the warning temperature, see GAUGE_MAX_EXPRESSION */
+export const TEMPERATURE = { min: 20 } as const
 
 /**
  * The CPU temperature at which Nexus Service warns, in °C. Base devices are taken to have an XCPU, which warns at 55°C
@@ -58,11 +66,11 @@ const WARNING = `$(local:${WARNING_VARIABLE})`
 const HOT = `(${local('cpuTemperature')} !== null && ${local('cpuTemperature')} >= ${WARNING})`
 
 /**
- * Red when offline, amber when online with a board missing, a power unit failed or the CPU at its warning temperature,
- * green when all is well, and grey until the device has been read. A value the XCI doesn't give is null, so only
- * === true and === false count
+ * The status light: red when offline, amber when online with a board missing, a power unit failed or the CPU at its
+ * warning temperature, green when all is well, and grey until the device has been read. A value the XCI doesn't give
+ * is null, so only === true and === false count
  */
-export const BACKGROUND_EXPRESSION = [
+export const STATUS_LIGHT_EXPRESSION = [
 	`${local('online')} === false ? '${COLORS.offline}'`,
 	`: ${local('online')} === true && (${local('boardsOk')} === false || ${local('powerOk')} === false || ${HOT}) ? '${COLORS.degraded}'`,
 	`: ${local('online')} === true ? '${COLORS.ok}'`,
@@ -71,23 +79,43 @@ export const BACKGROUND_EXPRESSION = [
 
 export const STATUS_EXPRESSION = `${local('online')} === true ? 'Online' : ${local('online')} === false ? 'OFFLINE' : '-'`
 
+/**
+ * A Companion template string: the parts joined, between backticks. Companion's `+` only adds numbers, so
+ * `'Boards ' + 7` is NaN: text is joined with a template string or concat() instead
+ */
+const templateString = (...parts: string[]): string => `\`${parts.join('')}\``
+/** An expression's value inside a template string */
+const interpolate = (expression: string): string => `\${${expression}}`
+/** A value, or "-" until read */
+const orDash = (variable: string): string => interpolate(`${variable} ?? '-'`)
+
 /** eg "Boards 7/8", with "-" for a count not read */
 const countExpression = (label: string, have: string, of: string): string =>
-	`'${label} ' + (${have} ?? '-') + '/' + (${of} ?? '-')`
+	templateString(`${label} `, orDash(have), '/', orDash(of))
 
 export const BOARDS_EXPRESSION = countExpression('Boards', local('availBoards'), local('configBoards'))
 export const POWER_EXPRESSION = countExpression('PSU', local('pwrGoodUnits'), local('powerUnits'))
-export const TEMPERATURE_EXPRESSION = `'CPU ' + (${local('cpuTemperature')} ?? '-') + '°C'`
-export const TITLE_EXPRESSION = `'Device ' + $(local:${DEVICE_VARIABLE})`
+export const TEMPERATURE_EXPRESSION = templateString('CPU ', orDash(local('cpuTemperature')), '°C')
+export const TITLE_EXPRESSION = templateString('Device ', interpolate(`$(local:${DEVICE_VARIABLE})`))
 /** The gauge sits empty until the temperature has been read */
 export const GAUGE_EXPRESSION = `${local('cpuTemperature')} ?? ${TEMPERATURE.min}`
 
 /** How far either side of the warning temperature the gauge turns yellow, then red, in °C */
 export const WARNING_BAND = 10
 
+/** How much red the gauge shows above where it turns red, in °C */
+export const RED_BAND = 5
+
+/**
+ * The top of the gauge: the warning temperature, then 10°C of amber and 5°C of red. 70°C for an XCPU, and 95°C for a
+ * button set to an XCI's 80°C. A fixed top would leave most of the bar red for one, or the warning off the end for the
+ * other
+ */
+export const GAUGE_MAX_EXPRESSION = `${WARNING} + ${WARNING_BAND + RED_BAND}`
+
 /**
  * The gauge's colour bands. Each starts at its `from`, an expression of the warning temperature so the bands follow
- * `warnTemperature`, and runs to the next. With an XCPU's 55°C: green to 45, yellow to 55, amber to 65, red above
+ * `warnTemperature`, and runs to the next. With an XCPU's 55°C: green to 45, yellow to 55, amber to 65, red to 70
  */
 export const GAUGE_BANDS = [
 	{ name: 'normal', from: String(TEMPERATURE.min), color: '#43a047' },
@@ -96,15 +124,37 @@ export const GAUGE_BANDS = [
 	{ name: 'over', from: `${WARNING} + ${WARNING_BAND}`, color: '#e53935' },
 ] as const
 
-const text = (y: number, height: number, value: string, fontsize: number) =>
+/**
+ * Where each part of the button goes, as percentages of the button, top to bottom. Six rows fit only without the top
+ * bar, which the preset turns off. The rows touch: a text element keeps its own small margin
+ */
+export const LAYOUT = {
+	title: { y: 0, height: 20 },
+	/** Short of the right edge, for the status light */
+	status: { x: 2, y: 20, width: 74, height: 16 },
+	/** Square, so round on a square button. On the right of the status row, below the device name */
+	statusLight: { x: 80, y: 21, width: 14, height: 14 },
+	boards: { y: 36, height: 16 },
+	power: { y: 52, height: 16 },
+	temperature: { y: 68, height: 16 },
+	gauge: { x: 6, y: 86, width: 88, height: 10 },
+} as const
+
+/**
+ * A text element's fontsize is a percentage of the element's own height, 100 filling it, not of the button. Slightly
+ * under, so a line never touches the next, and shrinking to fit the width
+ */
+export const ROW_FONTSIZE = 90
+
+const text = (row: { x?: number; y: number; width?: number; height: number }, value: string) =>
 	({
 		type: 'text',
-		x: 2,
-		y,
-		width: 96,
-		height,
+		x: row.x ?? 2,
+		y: row.y,
+		width: row.width ?? 96,
+		height: row.height,
 		text: { isExpression: true, value },
-		fontsize,
+		fontsize: ROW_FONTSIZE,
 		fontsizeAllowShrink: true,
 		color: COLORS.text,
 		halign: 'center',
@@ -136,6 +186,8 @@ export function baseDeviceHealthPreset(): CompanionLayeredButtonPresetDefinition
 				options: { device: DEVICE, property },
 			})),
 		],
+		// The top bar would take a fifth of the button, leaving too little for six rows
+		canvas: { decoration: ButtonGraphicsDecorationType.Border },
 		elements: [
 			{
 				type: 'box',
@@ -145,30 +197,34 @@ export function baseDeviceHealthPreset(): CompanionLayeredButtonPresetDefinition
 				y: 0,
 				width: 100,
 				height: 100,
-				color: { isExpression: true, value: BACKGROUND_EXPRESSION },
+				color: COLORS.background,
 			},
 			{
-				...text(0, 22, TITLE_EXPRESSION, 20),
+				...text(LAYOUT.title, TITLE_EXPRESSION),
 				id: 'title',
 				name: 'Device',
 				weight: 'bold',
 			},
-			{ ...text(22, 18, STATUS_EXPRESSION, 16), id: 'status', name: 'Online' },
-			{ ...text(40, 16, BOARDS_EXPRESSION, 14), id: 'boards', name: 'Boards' },
-			{ ...text(56, 16, POWER_EXPRESSION, 14), id: 'power', name: 'Power Units' },
-			{ ...text(72, 14, TEMPERATURE_EXPRESSION, 13), id: 'temperature', name: 'CPU Temperature' },
+			{ ...text(LAYOUT.status, STATUS_EXPRESSION), id: 'status', name: 'Online' },
+			{
+				type: 'circle',
+				id: 'status_light',
+				name: 'Status Light',
+				...LAYOUT.statusLight,
+				color: { isExpression: true, value: STATUS_LIGHT_EXPRESSION },
+			},
+			{ ...text(LAYOUT.boards, BOARDS_EXPRESSION), id: 'boards', name: 'Boards' },
+			{ ...text(LAYOUT.power, POWER_EXPRESSION), id: 'power', name: 'Power Units' },
+			{ ...text(LAYOUT.temperature, TEMPERATURE_EXPRESSION), id: 'temperature', name: 'CPU Temperature' },
 			{
 				type: 'gauge',
 				id: 'temperature_gauge',
 				name: 'CPU Temperature Gauge',
-				x: 6,
-				y: 88,
-				width: 88,
-				height: 8,
+				...LAYOUT.gauge,
 				orientation: 'horizontal',
 				value: { isExpression: true, value: GAUGE_EXPRESSION },
 				min: TEMPERATURE.min,
-				max: TEMPERATURE.max,
+				max: { isExpression: true, value: GAUGE_MAX_EXPRESSION },
 				// One colour for the whole fill, the band the temperature is in, so the bar flips as it crosses each.
 				// Companion takes the colour of the highest stop at or below the value
 				multiColour: false,
@@ -178,6 +234,7 @@ export function baseDeviceHealthPreset(): CompanionLayeredButtonPresetDefinition
 					gradient: false,
 				})),
 				trackStyle: 'dimmed',
+				trackAmount: GAUGE_TRACK_AMOUNT,
 			},
 		],
 		feedbacks: [],

@@ -217,9 +217,10 @@ export function agentVarbinds({
 		else if (typeof value === 'boolean') varbinds.push(onOff(oid, value))
 		else if (typeof value === 'number') varbinds.push(integer(oid, value))
 	}
-	for (const [index, device] of devices) {
-		const column = (number: number): string => `${BASE_DEV_ENTRY}.${number}.${index}`
-		varbinds.push(integer(column(1), index))
+	// As the XCI does: rows numbered from 1, each with its node number in deviceIndex
+	for (const [row, [node, device]] of [...devices].entries()) {
+		const column = (number: number): string => `${BASE_DEV_ENTRY}.${number}.${row + 1}`
+		varbinds.push(integer(column(BaseDevColumn.deviceIndex), node))
 		if (device.online !== undefined) varbinds.push(onOff(column(BaseDevColumn.deviceOnline), device.online))
 		for (const field of [
 			'configBoards',

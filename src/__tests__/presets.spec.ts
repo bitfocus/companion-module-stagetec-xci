@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ParseExpression, ResolveExpression } from '@companion-app/expressions'
 import type {
+	JsonValue,
 	CompanionLayeredButtonPresetDefinition,
 	CompanionPresetDefinitions,
 	CompanionPresetSection,
@@ -9,13 +11,17 @@ import type { ModuleTypes } from '../main.js'
 import { DeviceProperty, FeedbackId, deviceHealth } from '../feedbacks.js'
 import { NexusState, type BaseDevice } from '../nexus.js'
 import {
-	BACKGROUND_EXPRESSION,
+	STATUS_LIGHT_EXPRESSION,
 	BOARDS_EXPRESSION,
 	COLORS,
 	DEVICE_VARIABLE,
 	GAUGE_BANDS,
 	GAUGE_EXPRESSION,
+	GAUGE_MAX_EXPRESSION,
+	GAUGE_TRACK_AMOUNT,
 	HEALTH_VARIABLES,
+	LAYOUT,
+	ROW_FONTSIZE,
 	POWER_EXPRESSION,
 	PresetId,
 	STATUS_EXPRESSION,
@@ -31,16 +37,22 @@ import {
 import { fakeInstance, feedbackDefinitions } from './fixtures.js'
 
 /**
- * Runs a preset expression as JavaScript, which Companion's expression syntax also is, with each `$(local:x)` replaced
- * by its value. Checks what a button shows without running Companion
+ * Evaluates a preset expression with Companion's own expression engine, as a placed button would, with the options
+ * Companion's ResolveExpression passes (shared-lib/lib/Expressions.ts). Not JavaScript: in Companion `+` only adds
+ * numbers, so `'Boards ' + 7` is NaN where JavaScript would join them, and that difference once shipped
  */
-function evaluate(expression: string, locals: Record<string, unknown>): unknown {
-	const js = expression.replace(/\$\(local:(\w+)\)/g, (_, name: string) => {
-		if (!(name in locals)) throw new Error(`No local variable ${name}`)
-		return JSON.stringify(locals[name] ?? null)
+function evaluate(expression: string, locals: Record<string, JsonValue | undefined>): unknown {
+	return ResolveExpression(ParseExpression(expression), {
+		getVariableValue: (idOrLabel, nameOrUndefined) => {
+			const [label, name] = nameOrUndefined === undefined ? idOrLabel.split(':') : [idOrLabel, nameOrUndefined]
+			if (label !== 'local' || !(name in locals)) throw new Error(`No local variable ${idOrLabel}`)
+			return locals[name]
+		},
+		unknownVariableValue: '$NA',
+		parseVariables: null,
+		stringConcatenation: false,
+		processTemplateEscapes: false,
 	})
-	// eslint-disable-next-line @typescript-eslint/no-implied-eval
-	return new Function(`return (${js})`)() as unknown
 }
 
 /** The local variables a placed preset would hold for a device, from the real Base Device Health feedback */
@@ -48,7 +60,7 @@ function localsFor(
 	device: BaseDevice | undefined,
 	number = 1,
 	warning: number = XCPU_WARNING,
-): Record<string, unknown> {
+): Record<string, JsonValue | undefined> {
 	return {
 		[DEVICE_VARIABLE]: number,
 		[WARNING_VARIABLE]: warning,
@@ -123,13 +135,14 @@ describe('base device health preset', () => {
 	it('draws with the expressions tested here', () => {
 		expect(expressions(preset).toSorted()).toEqual(
 			[
-				BACKGROUND_EXPRESSION,
+				STATUS_LIGHT_EXPRESSION,
 				TITLE_EXPRESSION,
 				STATUS_EXPRESSION,
 				BOARDS_EXPRESSION,
 				POWER_EXPRESSION,
 				TEMPERATURE_EXPRESSION,
 				GAUGE_EXPRESSION,
+				GAUGE_MAX_EXPRESSION,
 				...GAUGE_BANDS.filter(({ name }) => name !== 'normal').map(({ from }) => from),
 			].toSorted(),
 		)
@@ -140,7 +153,7 @@ describe('base device health preset', () => {
 		expect(new Set(ids).size).toBe(ids.length)
 	})
 
-	describe('background', () => {
+	describe('status light', () => {
 		it.each([
 			['green when all is well', HEALTHY, COLORS.ok],
 			['amber with a board missing', { ...HEALTHY, availBoards: 7 }, COLORS.degraded],
@@ -150,7 +163,7 @@ describe('base device health preset', () => {
 			['grey when the XCI gives no online state', { configBoards: 8 }, COLORS.unknown],
 			['green when online without board or power counts', { online: true }, COLORS.ok],
 		])('is %s', (_, device, color) => {
-			expect(evaluate(BACKGROUND_EXPRESSION, localsFor(device))).toBe(color)
+			expect(evaluate(STATUS_LIGHT_EXPRESSION, localsFor(device))).toBe(color)
 		})
 
 		it.each([
@@ -159,11 +172,11 @@ describe('base device health preset', () => {
 			['green at that temperature with an XCI’s threshold set', XCPU_WARNING, XCI_WARNING, COLORS.ok],
 			['amber at the XCI warning temperature with it set', XCI_WARNING, XCI_WARNING, COLORS.degraded],
 		])('is %s', (_, cpuTemperature, warning, color) => {
-			expect(evaluate(BACKGROUND_EXPRESSION, localsFor({ ...HEALTHY, cpuTemperature }, 1, warning))).toBe(color)
+			expect(evaluate(STATUS_LIGHT_EXPRESSION, localsFor({ ...HEALTHY, cpuTemperature }, 1, warning))).toBe(color)
 		})
 
 		it('is red when offline, however hot', () => {
-			expect(evaluate(BACKGROUND_EXPRESSION, localsFor({ ...HEALTHY, online: false, cpuTemperature: 99 }))).toBe(
+			expect(evaluate(STATUS_LIGHT_EXPRESSION, localsFor({ ...HEALTHY, online: false, cpuTemperature: 99 }))).toBe(
 				COLORS.offline,
 			)
 		})
@@ -197,8 +210,69 @@ describe('base device health preset', () => {
 		expect(evaluate(GAUGE_EXPRESSION, localsFor(undefined))).toBe(TEMPERATURE.min)
 		expect(preset.elements.find((element) => element.id === 'temperature_gauge')).toMatchObject({
 			min: TEMPERATURE.min,
-			max: TEMPERATURE.max,
+			max: { isExpression: true, value: GAUGE_MAX_EXPRESSION },
 			multiColour: false,
+		})
+	})
+
+	// 100°C left most of the bar red. The top follows the warning temperature, so an XCI's 80°C isn't off the end
+	it.each([
+		[XCPU_WARNING, 70],
+		[XCI_WARNING, 95],
+	])('tops the gauge 10°C of amber and 5°C of red above a warning at %i°C, at %i°C', (warning, top) => {
+		expect(evaluate(GAUGE_MAX_EXPRESSION, localsFor(HEALTHY, 1, warning))).toBe(top)
+	})
+
+	describe('layout', () => {
+		// fontsize is a percentage of the text element's own height. Sized against the button, at 13 to 20, each line
+		// came out a few pixels high
+		it('fills each text row with its text', () => {
+			const texts = preset.elements.filter((element) => element.id && element.id in LAYOUT && element.id !== 'gauge')
+			expect(texts).toHaveLength(5)
+			for (const element of texts) expect(element).toMatchObject({ fontsize: ROW_FONTSIZE, fontsizeAllowShrink: true })
+			expect(ROW_FONTSIZE).toBeGreaterThanOrEqual(80)
+			expect(ROW_FONTSIZE).toBeLessThanOrEqual(100)
+		})
+
+		it('stacks the rows top to bottom without overlapping, inside the button', () => {
+			const rows = [LAYOUT.title, LAYOUT.status, LAYOUT.boards, LAYOUT.power, LAYOUT.temperature, LAYOUT.gauge]
+			for (let i = 1; i < rows.length; i++) {
+				expect(rows[i].y).toBeGreaterThanOrEqual(rows[i - 1].y + rows[i - 1].height)
+			}
+			const last = rows.at(-1)!
+			expect(last.y + last.height).toBeLessThanOrEqual(100)
+		})
+
+		it('turns off the top bar the rows need the room of', () => {
+			expect(preset.canvas).toEqual({ decoration: 'border' })
+		})
+
+		// A full colour background didn't present well: the state is a light beside the status, on a plain background
+		it('shows the state as a round light on the right of the status row, below the name', () => {
+			const { status, statusLight, title } = LAYOUT
+			expect(preset.elements.find((element) => element.id === 'status_light')).toMatchObject({
+				type: 'circle',
+				...statusLight,
+				color: { isExpression: true, value: STATUS_LIGHT_EXPRESSION },
+			})
+			// Round on a square button
+			expect(statusLight.width).toBe(statusLight.height)
+			expect(statusLight.y).toBeGreaterThanOrEqual(title.y + title.height)
+			expect(statusLight.y + statusLight.height).toBeLessThanOrEqual(status.y + status.height)
+			expect(statusLight.x).toBeGreaterThanOrEqual(status.x + status.width)
+			expect(statusLight.x + statusLight.width).toBeLessThanOrEqual(100)
+		})
+
+		it('keeps the background plain', () => {
+			expect(preset.elements[0]).toMatchObject({ id: 'background', type: 'box', color: COLORS.background })
+		})
+
+		// At Companion's default of 70 the unlit track was too close to the fill to read the temperature
+		it('keeps the unlit gauge track faint', () => {
+			expect(preset.elements.find((element) => element.id === 'temperature_gauge')).toMatchObject({
+				trackAmount: GAUGE_TRACK_AMOUNT,
+			})
+			expect(GAUGE_TRACK_AMOUNT).toBeLessThanOrEqual(40)
 		})
 	})
 

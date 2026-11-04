@@ -57,6 +57,11 @@ export type Scalars = {
 /** baseDevTable's entry. A cell's OID is this, the column, then the device index */
 export const BASE_DEV_ENTRY = `${STATE}.2.1`
 export const BaseDevColumn = {
+	/**
+	 * The base device's node number. The MIB names it the table's INDEX, but the XCI numbers its rows from 1 and puts
+	 * the node number here: a project with nodes 1, 2, 10, 11 and 12 has rows 1 to 5
+	 */
+	deviceIndex: 1,
 	deviceOnline: 2,
 	configBoards: 3,
 	availBoards: 4,

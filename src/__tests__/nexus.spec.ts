@@ -111,6 +111,25 @@ describe('tables', () => {
 		expect(devices.get(2)).toEqual({ online: true })
 	})
 
+	// Seen on a real XCI: the third base device, node 10, read as device 3
+	it('numbers each base device by its node, not its row', () => {
+		const nodes = [1, 2, 10, 11, 12]
+		const varbinds = agentVarbinds({
+			devices: new Map(nodes.map((node) => [node, { online: true, cpuTemperature: node }])),
+		})
+		const devices = parseBaseDevTable(varbinds.filter(({ oid }) => oid.startsWith(BASE_DEV_ENTRY)))
+		expect([...devices.keys()]).toEqual(nodes)
+		expect(devices.get(10)).toEqual({ online: true, cpuTemperature: 10 })
+		expect(devices.has(3)).toBe(false)
+	})
+
+	it('falls back to the row for a base device without a node number', () => {
+		const varbinds = agentVarbinds({ devices: new Map([[10, { online: true }]]) }).filter(
+			({ oid }) => oid.startsWith(BASE_DEV_ENTRY) && !oid.startsWith(`${BASE_DEV_ENTRY}.1.`),
+		)
+		expect([...parseBaseDevTable(varbinds).keys()]).toEqual([1])
+	})
+
 	it('reads the trap destinations in index order', () => {
 		const varbinds = agentVarbinds({ trapAddresses: ['192.0.2.1', '192.0.2.2'] }).reverse()
 		expect(parseTrapTable(varbinds.filter(({ oid }) => oid.startsWith(TRAP_ADDRESS)))).toEqual([

@@ -99,11 +99,15 @@ function defined<T extends object>(object: T): T {
 	return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined)) as T
 }
 
+/**
+ * baseDevTable's rows, by base device node number. That comes from each row's deviceIndex, as the XCI numbers the
+ * rows themselves from 1, see {@link BaseDevColumn.deviceIndex}. A row without one keeps its row number
+ */
 export function parseBaseDevTable(varbinds: Varbind[]): Map<number, BaseDevice> {
 	const devices = new Map<number, BaseDevice>()
 	for (const [index, row] of rows(BASE_DEV_ENTRY, varbinds)) {
 		devices.set(
-			index,
+			decode(row, BaseDevColumn.deviceIndex, asInteger) ?? index,
 			defined({
 				online: decode(row, BaseDevColumn.deviceOnline, asOnOff),
 				configBoards: decode(row, BaseDevColumn.configBoards, asInteger),

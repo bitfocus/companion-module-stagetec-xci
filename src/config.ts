@@ -38,7 +38,8 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			id: 'host',
 			label: 'XCI IP',
 			width: 8,
-			regex: Regex.IP,
+			// An address, not a hostname: traps are matched to it by their source address, and are received over IPv4
+			regex: Regex.IPV4,
 			tooltip: 'The IP of the Nexus XCI',
 		},
 		{
