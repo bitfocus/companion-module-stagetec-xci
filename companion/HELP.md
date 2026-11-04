@@ -117,12 +117,14 @@ Whether every base device is online, every configured board available, or every 
 
 - **Active Errors**
 
-The number of active errors, optionally only from one node or with one error code (0 for any).
+The number of active errors, optionally only from one node (0 for any) or with one error code.
 
 ### Presets
 
 - **Health: Base Device Health**
 
-One button per base device: its node number, whether it is online, its available and configured boards, its working and fitted power units, and its CPU temperature, with a gauge that turns amber at 60°C and red at 75°C. The background is green when all is well, amber when a board is missing or a power unit has failed, red when the device is offline, and grey until the XCI has been read.
+One button per base device: its node number, whether it is online, its available and configured boards, its working and fitted power units, and its CPU temperature, with a gauge. The background is green when all is well, amber when a board is missing, a power unit has failed or the CPU has reached its warning temperature, red when the device is offline, and grey until the XCI has been read.
+
+The warning temperature is the button's `warnTemperature` local variable. It starts at 55°C, where Nexus Service warns for an XCPU, from its air temperature sensor.
 
 Once the XCI has been read, the preset is listed for each base device it reports. Until then it is offered for device 1. The button's `device` local variable picks the device, so it can be changed after placing.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DeviceProperty, FeedbackId, MAX_INTEGER, SystemProperty } from '../feedbacks.js'
+import { ANY_ERROR_CODE, ERROR_CODE_CHOICES, NexusErrorCode } from '../errors.js'
 import type { BaseDevice, ErrorEvent, NexusStatus } from '../nexus.js'
 import { checkFeedback, fakeInstance, feedbackDefinitions, unsubscribeFeedback } from './fixtures.js'
 
@@ -210,5 +211,54 @@ describe('sync source', () => {
 	it('is false until read', () => {
 		const { definitions } = withStatus({})
 		expect(checkFeedback(definitions, FeedbackId.SyncSource, { source: 0 })).toBe(false)
+	})
+})
+
+describe('active errors error code option', () => {
+	const option = () => {
+		const definition = withStatus({}).definitions[FeedbackId.ErrorCount]
+		if (!definition) throw new Error('No Active Errors feedback')
+		const code = definition.options.find(({ id }) => id === 'code')
+		if (code?.type !== 'dropdown') throw new Error('Error Code is not a dropdown')
+		return code
+	}
+
+	it('lists Any, then every code in the spec with its description, in code order', () => {
+		const { choices, default: defaultValue } = option()
+		expect(choices[0]).toEqual({ id: ANY_ERROR_CODE, label: 'Any' })
+		expect(defaultValue).toBe(ANY_ERROR_CODE)
+		const codes = choices.slice(1).map(({ id }) => id)
+		expect(codes).toHaveLength(23)
+		expect(codes).toEqual(codes.toSorted((a, b) => Number(a) - Number(b)))
+		expect(choices).toContainEqual({ id: 64, label: '64: Base device down' })
+		expect(choices).toContainEqual({ id: 69, label: '69: Power supply down' })
+		expect(choices).toContainEqual({ id: 127, label: '127: Invalid command received' })
+	})
+
+	// It was a number field: a value saved then is a number, and still has to be one of the choices
+	it('keeps every code a number, as the number field it replaced stored', () => {
+		expect(ERROR_CODE_CHOICES.every(({ id }) => typeof id === 'number')).toBe(true)
+		expect(ERROR_CODE_CHOICES.map(({ id }) => id)).toContain(NexusErrorCode.BoardFail)
+	})
+
+	it('takes a code the list doesn’t have, digits only', () => {
+		const { allowCustom, regex } = option()
+		expect(allowCustom).toBe(true)
+		const pattern = new RegExp(regex!.slice(1, -1))
+		expect(pattern.test('42')).toBe(true)
+		expect(pattern.test('4x')).toBe(false)
+		expect(pattern.test('')).toBe(false)
+	})
+
+	it('counts by a listed code, which Companion passes as its number, or a typed one, which it passes as text', () => {
+		const errors = [
+			{ occured: true, node: 1, code: 69, name: 'PWR', param: '' },
+			{ occured: true, node: 2, code: 42, name: '?', param: '' },
+		]
+		const { definitions } = withStatus({}, errors)
+		expect(checkFeedback(definitions, FeedbackId.ErrorCount, { node: 0, code: 69 })).toBe(1)
+		expect(checkFeedback(definitions, FeedbackId.ErrorCount, { node: 0, code: '42' })).toBe(1)
+		expect(checkFeedback(definitions, FeedbackId.ErrorCount, { node: 0, code: ANY_ERROR_CODE })).toBe(2)
+		expect(checkFeedback(definitions, FeedbackId.ErrorCount, { node: 2, code: 69 })).toBe(0)
 	})
 })

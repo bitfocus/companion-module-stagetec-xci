@@ -13,6 +13,7 @@ import {
 	BOARDS_EXPRESSION,
 	COLORS,
 	DEVICE_VARIABLE,
+	GAUGE_BANDS,
 	GAUGE_EXPRESSION,
 	HEALTH_VARIABLES,
 	POWER_EXPRESSION,
@@ -21,6 +22,9 @@ import {
 	TEMPERATURE,
 	TEMPERATURE_EXPRESSION,
 	TITLE_EXPRESSION,
+	WARNING_VARIABLE,
+	XCI_WARNING,
+	XCPU_WARNING,
 	UpdatePresets,
 	baseDeviceHealthPreset,
 } from '../presets.js'
@@ -40,9 +44,14 @@ function evaluate(expression: string, locals: Record<string, unknown>): unknown 
 }
 
 /** The local variables a placed preset would hold for a device, from the real Base Device Health feedback */
-function localsFor(device: BaseDevice | undefined, number = 1): Record<string, unknown> {
+function localsFor(
+	device: BaseDevice | undefined,
+	number = 1,
+	warning: number = XCPU_WARNING,
+): Record<string, unknown> {
 	return {
 		[DEVICE_VARIABLE]: number,
+		[WARNING_VARIABLE]: warning,
 		...Object.fromEntries(HEALTH_VARIABLES.map((property) => [property, deviceHealth(device, property)])),
 	}
 }
@@ -90,6 +99,11 @@ describe('base device health preset', () => {
 			expect(offered).toContain(local.variableName)
 			expect(DeviceProperty).toContain(local.variableName)
 		}
+		expect(preset.localVariables?.[1]).toEqual({
+			variableType: 'simple',
+			variableName: WARNING_VARIABLE,
+			startupValue: XCPU_WARNING,
+		})
 		expect(preset.localVariables?.[0]).toEqual({
 			variableType: 'simple',
 			variableName: DEVICE_VARIABLE,
@@ -116,6 +130,7 @@ describe('base device health preset', () => {
 				POWER_EXPRESSION,
 				TEMPERATURE_EXPRESSION,
 				GAUGE_EXPRESSION,
+				...GAUGE_BANDS.filter(({ name }) => name !== 'normal').map(({ from }) => from),
 			].toSorted(),
 		)
 	})
@@ -136,6 +151,21 @@ describe('base device health preset', () => {
 			['green when online without board or power counts', { online: true }, COLORS.ok],
 		])('is %s', (_, device, color) => {
 			expect(evaluate(BACKGROUND_EXPRESSION, localsFor(device))).toBe(color)
+		})
+
+		it.each([
+			['green below the XCPU warning temperature', XCPU_WARNING - 1, XCPU_WARNING, COLORS.ok],
+			['amber at the XCPU warning temperature, as Nexus Service warns', XCPU_WARNING, XCPU_WARNING, COLORS.degraded],
+			['green at that temperature with an XCI’s threshold set', XCPU_WARNING, XCI_WARNING, COLORS.ok],
+			['amber at the XCI warning temperature with it set', XCI_WARNING, XCI_WARNING, COLORS.degraded],
+		])('is %s', (_, cpuTemperature, warning, color) => {
+			expect(evaluate(BACKGROUND_EXPRESSION, localsFor({ ...HEALTHY, cpuTemperature }, 1, warning))).toBe(color)
+		})
+
+		it('is red when offline, however hot', () => {
+			expect(evaluate(BACKGROUND_EXPRESSION, localsFor({ ...HEALTHY, online: false, cpuTemperature: 99 }))).toBe(
+				COLORS.offline,
+			)
 		})
 	})
 
@@ -169,7 +199,49 @@ describe('base device health preset', () => {
 			min: TEMPERATURE.min,
 			max: TEMPERATURE.max,
 			multiColour: false,
-			stops: [{ value: TEMPERATURE.min }, { value: TEMPERATURE.warm }, { value: TEMPERATURE.hot }],
+		})
+	})
+
+	describe('temperature gauge colour', () => {
+		const gauge = preset.elements.find((element) => element.id === 'temperature_gauge') as unknown as {
+			stops: { value: number | { isExpression: true; value: string }; color: string; gradient: boolean }[]
+		}
+		const color = (name: (typeof GAUGE_BANDS)[number]['name']) => GAUGE_BANDS.find((band) => band.name === name)!.color
+
+		/** The fill colour, as Companion's GaugeColorModel picks it with multiColour off: the highest stop at or below */
+		function fill(cpuTemperature: number, warning: number): string {
+			const locals = localsFor({ ...HEALTHY, cpuTemperature }, 1, warning)
+			const stops = gauge.stops
+				.map(({ value, color }) => ({
+					at: typeof value === 'number' ? value : (evaluate(value.value, locals) as number),
+					color,
+				}))
+				.sort((a, b) => a.at - b.at)
+			let result = stops[0].color
+			for (const stop of stops) if (stop.at <= cpuTemperature) result = stop.color
+			return result
+		}
+
+		it.each([
+			[XCPU_WARNING, 44, 'normal'],
+			[XCPU_WARNING, 45, 'approaching'],
+			[XCPU_WARNING, 54, 'approaching'],
+			[XCPU_WARNING, 55, 'warning'],
+			[XCPU_WARNING, 64, 'warning'],
+			[XCPU_WARNING, 65, 'over'],
+			[XCPU_WARNING, 99, 'over'],
+			[XCI_WARNING, 69, 'normal'],
+			[XCI_WARNING, 70, 'approaching'],
+			[XCI_WARNING, 80, 'warning'],
+			[XCI_WARNING, 90, 'over'],
+		] as const)('with a warning at %i°C, %i°C is %s', (warning, temperature, band) => {
+			expect(fill(temperature, warning)).toBe(color(band))
+		})
+
+		it('fills in one colour, with no gradient', () => {
+			expect(gauge).toMatchObject({ multiColour: false })
+			expect(gauge.stops.every(({ gradient }) => !gradient)).toBe(true)
+			expect(new Set(GAUGE_BANDS.map(({ color }) => color)).size).toBe(GAUGE_BANDS.length)
 		})
 	})
 })
@@ -198,6 +270,7 @@ describe('UpdatePresets', () => {
 				{ name: 'Base Device 4', value: 4 },
 			],
 		})
+		expect(group).not.toHaveProperty('commonVariableValues')
 		expect(presets[PresetId.BaseDeviceHealth]).toBeDefined()
 	})
 

@@ -7,6 +7,7 @@ import {
 import type ModuleInstance from './main.js'
 import type { BaseDevice, NexusState } from './nexus.js'
 import { cellOption } from './options.js'
+import { ANY_ERROR_CODE, ERROR_CODE_CHOICES } from './errors.js'
 
 /**
  * Feedback ids. The values are the ids saved against every button using the feedback, so they must never change.
@@ -55,7 +56,8 @@ export type FeedbackSchema = {
 		result: HealthResult
 	}
 	[FeedbackId.SystemHealth]: { type: 'value'; options: { property: SystemProperty }; result: HealthResult }
-	[FeedbackId.ErrorCount]: { type: 'value'; options: { node: number; code: number }; result: number }
+	/** `code` is a listed code's number, or the text of a code typed in that isn't listed */
+	[FeedbackId.ErrorCount]: { type: 'value'; options: { node: number; code: number | string }; result: number }
 	[FeedbackId.SyncSource]: { type: 'boolean'; options: { source: number } }
 }
 
@@ -232,10 +234,20 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			type: 'value',
 			options: [
 				anyOption('node', 'Node', 'Only errors from this node. 0 for any'),
-				anyOption('code', 'Error Code', 'Only errors with this code. 0 for any'),
+				{
+					id: 'code',
+					type: 'dropdown',
+					label: 'Error Code',
+					choices: ERROR_CODE_CHOICES,
+					default: ANY_ERROR_CODE,
+					// A code the list doesn't have can be typed in. Companion passes it on as text
+					allowCustom: true,
+					regex: '/^\\d+$/',
+					tooltip: 'Only errors with this code. Any for every code',
+				},
 			],
 			callback: ({ options }) =>
-				self.nexus.errors.count({ node: Math.floor(options.node), code: Math.floor(options.code) }),
+				self.nexus.errors.count({ node: Math.floor(options.node), code: Number(options.code) }),
 		},
 		[FeedbackId.SyncSource]: {
 			name: 'Sync Source',
