@@ -1,7 +1,4 @@
 /**
- * The feedback instances in use, by the number each reads its state from: a crosspoint feedback by its destination, an
- * alarm feedback by its alarm. When the router reports a change to one, only the feedbacks reading it are rechecked.
- *
  * A feedback registers from its callback, with the number its options name. Companion runs the callback again when the
  * options change, without calling unsubscribe, so registering also moves the feedback off the number it had before.
  */

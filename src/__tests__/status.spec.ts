@@ -8,12 +8,12 @@ describe('StatusTracker', () => {
 		const tracker = new StatusTracker(update)
 		tracker.set('listener', InstanceStatus.Ok)
 		tracker.set('status', InstanceStatus.UnknownWarning, 'no answer')
-		tracker.set('traps', InstanceStatus.BadConfig, 'Incorrect Community')
+		tracker.set('traps', InstanceStatus.BadConfig, 'Incorrect community')
 		tracker.set('status', InstanceStatus.Ok)
 		expect(update.mock.calls).toEqual([
 			[InstanceStatus.Ok, undefined],
 			[InstanceStatus.UnknownWarning, 'no answer'],
-			[InstanceStatus.BadConfig, 'Incorrect Community'],
+			[InstanceStatus.BadConfig, 'Incorrect community'],
 		])
 	})
 

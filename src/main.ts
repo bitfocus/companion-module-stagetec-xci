@@ -77,7 +77,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 
 	async configUpdated(config: ModuleConfig): Promise<void> {
 		this.#config = { ...CONFIG_DEFAULTS, ...config }
-		this.log('debug', `Config Updated. IP: ${config.host} Community String: ${config.community}`)
+		this.log('debug', `Config updated. IP: ${config.host}, community string: ${config.community}`)
 		this.#stopPolling()
 		this.#listener?.close()
 		this.#listener = undefined
@@ -102,7 +102,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 			await listener.start()
 		} catch (err) {
 			if (this.#listener !== listener) return
-			this.log('error', `Agent initialisation failed: ${errorMessage(err)}`)
+			this.log('error', `Trap listener failed to start: ${errorMessage(err)}`)
 			this.#status.set('listener', InstanceStatus.UnknownError, errorMessage(err))
 		}
 		// Superseded by a config change or destroy while binding, which has started what it needs
@@ -327,7 +327,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 		for (const { kind, varbind } of problems) {
 			switch (kind) {
 				case 'no-value':
-					this.log('warn', `OID: ${varbind.oid} has no value field`)
+					this.log('warn', `OID ${varbind.oid} has no value field`)
 					break
 				case 'out-of-range':
 					this.log('debug', `OID out of range: ${varbind.oid}, raw value: ${String(varbind.value)}`)
@@ -337,7 +337,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 					break
 				default: {
 					const exhaustive: never = kind
-					this.log('warn', `OID: ${varbind.oid}: ${String(exhaustive)}`)
+					this.log('warn', `Unhandled problem with OID ${varbind.oid}: ${String(exhaustive)}`)
 				}
 			}
 		}
@@ -360,21 +360,17 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 			return
 		}
 		if (!notification) return
-		const { pdu, rinfo } = notification
-		const { host, community } = this.#config
-		if (rinfo.address !== host) {
-			this.#status.set('traps', InstanceStatus.UnknownWarning, 'Trap received from unexpected IP')
-			this.log('error', `Unexpected trap received from ${rinfo.address}`)
-			return
-		}
+		// The listener's socket wrapper has already dropped traps from any address but the XCI's
+		const { pdu } = notification
+		const { community } = this.#config
 		if (pdu.community !== community) {
-			this.#status.set('traps', InstanceStatus.BadConfig, 'Incorrect Community')
-			this.log('error', `Expected community: ${community} Received community: ${pdu.community}`)
+			this.#status.set('traps', InstanceStatus.BadConfig, 'Incorrect community')
+			this.log('warn', `Expected community: ${community}, received community: ${pdu.community}`)
 			return
 		}
 		if (!Array.isArray(pdu.varbinds)) {
-			this.#status.set('traps', InstanceStatus.UnknownWarning, 'Trap has no Varbinds')
-			this.log('error', `Received trap contains no varbinds`)
+			this.#status.set('traps', InstanceStatus.UnknownWarning, 'Trap has no varbinds')
+			this.log('error', 'Received trap contains no varbinds')
 			return
 		}
 		this.#status.set('traps', InstanceStatus.Ok)
@@ -405,7 +401,8 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 	#onErrorTrap(varbinds: snmp.Varbind[], occured: boolean): void {
 		const events = parseErrorTrap(varbinds, occured)
 		for (const { node, code, name, param } of events) {
-			this.log('warn', `Nexus error ${occured ? 'occured' : 'removed'}: node ${node} code ${code} ${name} ${param}`)
+			const detail = param ? `${name} (${param})` : name
+			this.log('warn', `Nexus error ${occured ? 'occurred' : 'removed'}: node ${node}, code ${code}, ${detail}`)
 		}
 		if (this.#errorTrapDuringPoll) this.#errorTrapDuringPoll.arrived = true
 		if (!this.nexus.errors.apply(events)) return
@@ -421,7 +418,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 		const feedbackIds = new Set<string>()
 		for (const report of reports) {
 			const { cell, value } = report
-			this.log('info', `Logic Cell ${cell} set to ${value}`)
+			this.log('info', `Logic cell ${cell} set to ${value}`)
 			this.#trappedDuringPoll?.add(cell)
 			const { valueChanged, latchChanged } = this.cells.report(report)
 			if (valueChanged) this.trapFeedbacks.feedbacksFor(cell).forEach((id) => feedbackIds.add(id))

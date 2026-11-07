@@ -263,7 +263,7 @@ describe('with feedbacks on cells 4 and 5', () => {
 	it('ignores a trap with the wrong community', () => {
 		deliver(socket, [cellVarbind(4, true)], { community: 'public' })
 
-		expect(host.updateStatus).toHaveBeenCalledExactlyOnceWith(InstanceStatus.BadConfig, 'Incorrect Community')
+		expect(host.updateStatus).toHaveBeenCalledExactlyOnceWith(InstanceStatus.BadConfig, 'Incorrect community')
 		expect(host.checkFeedbacksById).not.toHaveBeenCalled()
 		expect(instance.cells.get(4).value).toBe(false)
 	})
