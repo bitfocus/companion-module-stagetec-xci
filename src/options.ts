@@ -27,4 +27,5 @@ export const allCellsOption: CompanionInputFieldCheckbox<'all'> = {
 	type: 'checkbox',
 	label: 'Reset All',
 	default: false,
+	disableAutoExpression: true,
 }
