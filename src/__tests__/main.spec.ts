@@ -423,7 +423,10 @@ describe('reading the logic cells', () => {
 	})
 	afterEach(async () => {
 		await instance.destroy()
+		vi.useRealTimers()
 	})
+	/** The cell polls a client has started, each asking first for cell 1 */
+	const cellPolls = (client: FakeClient) => client.get.mock.calls.filter(([oids]) => oids[0] === logicCellOid(1))
 
 	it('reads every cell on start, with the configured settings, and latches those found true', async () => {
 		clients.agent = fakeAgent({ trueCells: [4] })
@@ -535,6 +538,49 @@ describe('reading the logic cells', () => {
 			InstanceStatus.UnknownWarning,
 			'Reading the logic cells failed: Request timed out',
 		)
+	})
+
+	// As when Companion starts before a booting XCI card answers
+	it('reads the cells again once the XCI answers a status read, until a read succeeds', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+		clients.agent = timingOut
+		await instance.init({ ...CONFIG, pollInterval: 10 })
+		await settle()
+		const [client] = clients.made
+		expect(cellPolls(client)).toHaveLength(1)
+
+		// The status read fails too, so the cells aren't asked again
+		await vi.advanceTimersByTimeAsync(10_000)
+		await settle()
+		expect(cellPolls(client)).toHaveLength(1)
+
+		clients.agent = fakeAgent({ trueCells: [4] })
+		await vi.advanceTimersByTimeAsync(10_000)
+		await settle()
+		expect(cellPolls(client)).toHaveLength(2)
+		expect(instance.cells.get(4)).toEqual({ value: true, latch: true, count: 0 })
+		expect(host.updateStatus).toHaveBeenLastCalledWith(InstanceStatus.Ok, undefined)
+
+		await vi.advanceTimersByTimeAsync(10_000)
+		await settle()
+		expect(cellPolls(client)).toHaveLength(2)
+	})
+
+	it('starts no second cell poll when Refresh’s status read succeeds while its cell poll is running', async () => {
+		clients.agent = timingOut
+		await instance.init(CONFIG)
+		await settle()
+		const [client] = clients.made
+		const poll = holdFirstAnswer({ trueCells: [4] })
+
+		instance.refresh()
+		await settle()
+		poll.release()
+		await settle()
+		// The one that failed on start, and Refresh's
+		expect(cellPolls(client)).toHaveLength(2)
+		expect(instance.cells.get(4).value).toBe(true)
+		expect(host.updateStatus).toHaveBeenLastCalledWith(InstanceStatus.Ok, undefined)
 	})
 
 	it('closes the client on destroy', async () => {

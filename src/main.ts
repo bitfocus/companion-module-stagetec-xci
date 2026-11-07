@@ -46,8 +46,13 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 	/** Aborted by a config change or destroy, ending the polls in flight */
 	#controller = new AbortController()
 	#statusTimer: NodeJS.Timeout | undefined
-	/** The cells traps have reported since the cell poll in flight started. Its results for them are older, so are dropped */
-	#trappedDuringPoll: Set<number> | undefined
+	/**
+	 * The cell poll in flight, by the signal of the config it reads for, and the cells traps have reported since it
+	 * started. Its results for those are older, so are dropped
+	 */
+	#cellPoll: { signal: AbortSignal; trapped: Set<number> } | undefined
+	/** Whether the last cell poll succeeded. Until one does, a status poll that succeeds starts another */
+	#cellsRead = false
 	/** Set by an error trap during the status poll in flight. The error table it read is older, so is dropped */
 	#errorTrapDuringPoll: { arrived: boolean } | undefined
 	/** The device limit the feedback definitions were last set with, see {@link NexusState.deviceLimit} */
@@ -220,6 +225,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 			return
 		}
 		const { signal } = this.#controller
+		this.#cellsRead = false
 		void this.#pollLogicCells(this.#client, signal)
 		void this.#statusLoop(this.#client, signal)
 	}
@@ -227,10 +233,15 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 	/**
 	 * Reads the state of every logic cell, so the feedbacks show it without waiting for each cell's next trap. A cell
 	 * found true sets its latch, but isn't counted, see {@link LogicCells.setValue}
+	 *
+	 * Does nothing while a poll for the same config is in flight. A second would take over the record of trapped cells,
+	 * and the first could then overwrite a trap with its older reading
 	 */
 	async #pollLogicCells(client: XciClient, signal: AbortSignal): Promise<void> {
-		const trapped = new Set<number>()
-		this.#trappedDuringPoll = trapped
+		// By signal, not a flag, so a poll a config change aborted but which hasn't unwound doesn't hold off the new one
+		if (this.#cellPoll?.signal === signal) return
+		const poll = { signal, trapped: new Set<number>() }
+		this.#cellPoll = poll
 		try {
 			const { reports, problems, failures } = await pollLogicCells(async (oids, s) => client.get(oids, s), signal)
 			if (signal.aborted) return
@@ -240,7 +251,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 			const values: Partial<VariablesSchema> = {}
 			const feedbackIds = new Set<string>()
 			for (const report of reports) {
-				if (trapped.has(report.cell)) continue
+				if (poll.trapped.has(report.cell)) continue
 				const { cell } = report
 				const { valueChanged, latchChanged } = this.cells.setValue(report)
 				if (valueChanged) this.trapFeedbacks.feedbacksFor(cell).forEach((id) => feedbackIds.add(id))
@@ -252,13 +263,15 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 			if (Object.keys(values).length > 0) this.setVariableValues(values)
 			if (feedbackIds.size > 0) this.checkFeedbacksById(...feedbackIds)
 			this.log('info', `Read ${reports.length} logic cells from ${this.#config.host}`)
+			this.#cellsRead = true
 			this.#status.set('cells', InstanceStatus.Ok)
 		} catch (err) {
 			if (signal.aborted) return
+			this.#cellsRead = false
 			this.log('warn', `Reading the logic cells failed: ${errorMessage(err)}`)
 			this.#status.set('cells', InstanceStatus.UnknownWarning, `Reading the logic cells failed: ${errorMessage(err)}`)
 		} finally {
-			if (this.#trappedDuringPoll === trapped) this.#trappedDuringPoll = undefined
+			if (this.#cellPoll === poll) this.#cellPoll = undefined
 		}
 	}
 
@@ -284,6 +297,8 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 			for (const { oid, error } of status.failures) this.log('warn', `Reading ${oid} failed: ${error.message}`)
 			this.#applyStatus(status, errorTraps.arrived)
 			this.#status.set('status', InstanceStatus.Ok)
+			// The XCI answers now, so read the cells if their last poll failed, perhaps while the XCI was still starting
+			if (!this.#cellsRead) void this.#pollLogicCells(client, signal)
 		} catch (err) {
 			if (signal.aborted) return
 			this.log('warn', `Reading the Nexus status failed: ${errorMessage(err)}`)
@@ -419,7 +434,7 @@ export default class ModuleInstance extends InstanceBase<ModuleTypes> {
 		for (const report of reports) {
 			const { cell, value } = report
 			this.log('info', `Logic cell ${cell} set to ${value}`)
-			this.#trappedDuringPoll?.add(cell)
+			this.#cellPoll?.trapped.add(cell)
 			const { valueChanged, latchChanged } = this.cells.report(report)
 			if (valueChanged) this.trapFeedbacks.feedbacksFor(cell).forEach((id) => feedbackIds.add(id))
 			if (latchChanged) this.latchFeedbacks.feedbacksFor(cell).forEach((id) => feedbackIds.add(id))
