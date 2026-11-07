@@ -2,19 +2,19 @@
 
 - [Stagetec XCI](https://www.stagetec.com/en/nexus-modular.html)
 
-This module is a SNMP trap reciever optimised for the logic configurable traps from the Stagetec Nexus XCI. It allows boolean feedbacks to be created and used to trigger events in Companion based on Logic configured in Nexus Service.
+This module is an system monitor amd SNMP trap receiver optimised for the logic configurable traps from the Stagetec Nexus XCI. It allows boolean feedbacks to be created and used to trigger events in Companion based on logic configured in Nexus Service.
 
-Each XCI card is capable of 256 logic configurable SNMP traps. NB. In the test system the 256th logic cell doesnt report an OID correctly.
+Each XCI card is capable of 256 logic configurable SNMP traps. NB. In the test system the 256th logic cell doesn't report an OID correctly.
 
 ### Configuration
 
 **XCI IP**
 
-The IP of the XCI card. Any traps recieved from other IPs will be ignored.
+The IP of the XCI card. Any traps received from other IPs will be ignored.
 
 **Community String**
 
-The community string set on the XCI. Any traps recieved with a non-matching community will be ignored. It is also used to read the state of the logic cells.
+The community string set on the XCI. Any traps received with a non-matching community will be ignored. It is also used to read the state of the logic cells.
 
 **SNMP Version**
 
@@ -30,13 +30,13 @@ How often the Nexus status (project, base devices, trap destinations and errors)
 
 ### XCI Configuration
 
-Configuring the XCI to trigger SNMP traps requires use of Nexus service.
+Configuring the XCI to trigger SNMP traps requires use of Nexus Service.
 
 In the ethernet configuration window select the XCI card and navigate to the SNMP tab.
 
 ![Network Configuration](images/xci-network-snmp.png)
 
-Ensure SNMP is enabled. Set the community string and the trap number to at least one. One of the destination IPs should be the host IP of the companion computer. This module will work regardless of if the XCI is in SNMP V1 or V2c mode.
+Ensure SNMP is enabled. Set the community string and the trap number to at least one. One of the destination IPs should be the host IP of the Companion computer. This module will work regardless in either v1 or v2c mode.
 
 SNMP traps will only be triggered from logic cells according to the settings in "First Cell Number", "Logic Cell Number" and "Logic Trap Number".
 
@@ -44,7 +44,7 @@ Logic configuration to trigger the traps is then done in the Logic section of Ne
 
 ![Logic Configuration](images/nexus-logic.png)
 
-Both the network settings and logic configuration must be uploaded to the nexus system once the respective changes are made.
+Both the network settings and logic configuration must be uploaded to the Nexus system once the respective changes are made.
 
 ### Note on use
 
@@ -72,15 +72,15 @@ Read the logic cells and the Nexus status from the XCI now.
 
 - **Logic Cell Count [ 1 - 256 ]**
 
-Increments when a SNMP trap is recieved setting the cell to true.
+Increments when an SNMP trap is received setting the cell to true.
 
 - **Logic Cell Latch [ 1 - 256 ]**
 
-Goes true when a SNMP trap is recieved setting the cell to true. Stays true until reset.
+Goes true when an SNMP trap is received setting the cell to true. Stays true until reset.
 
 - **Most Recent Trigger**
 
-Returns the cell number of the most recently recieved true SNMP trap.
+Returns the cell number of the most recently received true SNMP trap.
 
 The rest are named after the objects in the XCI's MIB (MATRIX5-MIB). Each is empty until read, or if the XCI doesn't report it.
 
@@ -88,18 +88,18 @@ The rest are named after the objects in the XCI's MIB (MATRIX5-MIB). Each is emp
 - **XCI:** `hostName`, `deviceType`, `moduleName` and `moduleVersion` (the MIB the XCI implements)
 - **Logic signals:** `firstSignal`, `configSignals` (how many are configured), `trapSignals` (how many have traps)
 - **Traps:** `trapDestinations`, `trapDestAuto`, `trapTimeout`, and `trapAddresses`, the destination IPs separated by commas
-- **Errors:** `activeErrors` (how many), `activeErrorNames` (separated by commas), and `lastErrorNode`, `lastErrorCode`, `lastErrorName` and `lastErrorParam` for the error that most recently occured, even once removed
+- **Errors:** `activeErrors` (how many), `activeErrorNames` (separated by commas), and `lastErrorNode`, `lastErrorCode`, `lastErrorName` and `lastErrorParam` for the error that most recently occurred, even once removed
 - **Each base device**, by its node number N: `deviceOnline_N`, `configBoards_N`, `availBoards_N`, `powerUnits_N`, `pwrGoodUnits_N`, `cpuTemperature_N` and `cpuMaxTemp_N` (the highest since cold boot), in °C. These appear once the XCI has been read
 
 ### Feedbacks
 
 - **XCI SNMP Trap**
 
-Follows the state of the specified SNMP trap
+Follows the state of the specified SNMP trap.
 
 - **XCI SNMP Trap - Latched**
 
-Goes true when triggered by a Trap. Stays true until reset.
+Goes true when triggered by a trap. Stays true until reset.
 
 - **Sync Source**
 
@@ -125,6 +125,6 @@ The number of active errors, optionally only from one node (0 for any) or with o
 
 One button per base device: its node number, whether it is online, its available and configured boards, its working and fitted power units, and its CPU temperature, with a gauge. A light beside the online state is green when all is well, amber when a board is missing, a power unit has failed or the CPU has reached its warning temperature, red when the device is offline, and grey until the XCI has been read.
 
-The warning temperature is the button's `warnTemperature` local variable. It starts at 55°C, where Nexus Service warns for an XCPU, from its air temperature sensor.
+The warning temperature is the button's `warnTemperature` local variable. It starts at 55°C, where Nexus Service warns for an XCPU.
 
 Once the XCI has been read, the preset is listed for each base device it reports. Until then it is offered for device 1. The button's `device` local variable picks the device, so it can be changed after placing.
