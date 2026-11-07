@@ -4,6 +4,13 @@ See [HELP.md](./companion/HELP.md) and [LICENSE](./LICENSE)
 
 ## Version History
 
+### Version 2.0.1
+
+- Fix: Disable expressions for `all` option
+- Fix: typos
+- Fix: Remove some dead code
+- Fix: Better status updates
+
 ### Version 2.0.0
 
 - Requires Companion 5.1 or later

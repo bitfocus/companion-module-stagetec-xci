@@ -52,7 +52,7 @@ When the module starts, and whenever its config is changed, it reads the state o
 
 The rest of the Nexus status is read at the same time, then every poll interval. Errors are also kept up to date between polls by the XCI's error traps.
 
-If the XCI does not answer, the connection shows a warning, and the cells stay false until their next trap. Everything the module reads is read-only: SNMP can't change anything on the Nexus.
+If the XCI does not answer, the connection shows a warning, and each cell stays false until its next trap. Once the XCI answers a status read, the cells are read again and the warning clears. With a Status Poll Interval of 0 there are no further status reads, so press Refresh instead. Everything the module reads is read-only: SNMP can't change anything on the Nexus.
 
 ### Actions
 
